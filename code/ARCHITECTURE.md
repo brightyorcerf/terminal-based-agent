@@ -104,6 +104,11 @@ is instructed not to echo it.
 - No hallucination risk — only returns real paths from the corpus manifest
 - Fast enough for 150 tickets even with a large corpus
 
+**Tokenizer:** lowercase + alphanumeric extraction + static stop word list (63 words).
+BM25's IDF naturally down-weights high-frequency words, but explicit removal sharpens
+precision for product-specific technical terms which are the primary signal here.
+No stemming — stemming libraries have version-dependent behaviour that would break determinism.
+
 The corpus manifest (frozenset of real paths) is built at startup by walking
 `data/`. This manifest is the single source of truth for citation validation
 in Stage 4.

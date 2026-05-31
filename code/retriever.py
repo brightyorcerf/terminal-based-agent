@@ -20,12 +20,31 @@ from config import (
 
 # ── Tokenizer ────────────────────────────────────────────────────────────────
 
+# High-frequency words that add noise without adding signal.
+# BM25's IDF naturally down-weights them, but removing them sharpens precision
+# for specific product/technical terms (the main retrieval signal here).
+_STOP_WORDS: frozenset[str] = frozenset({
+    "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+    "of", "with", "by", "from", "is", "are", "was", "were", "be", "been",
+    "being", "have", "has", "had", "do", "does", "did", "will", "would",
+    "could", "should", "may", "might", "i", "my", "me", "we", "our", "you",
+    "your", "he", "she", "it", "they", "their", "this", "that", "these",
+    "those", "not", "no", "so", "if", "as", "up", "out", "about", "can",
+    "get", "got", "just", "also", "what", "how", "when", "where", "which",
+    "who", "whom", "all", "any", "some", "more", "than", "then", "there",
+    "here", "now", "its",
+})
+
+
 def tokenize(text: str) -> list[str]:
     """
-    Deterministic tokenizer. Lowercase, alphanumeric tokens only.
+    Deterministic tokenizer. Lowercase, alphanumeric tokens only, stop words removed.
     No stemming (stemming libraries can be non-deterministic across versions).
     """
-    return re.findall(r"[a-z0-9]+", text.lower())
+    return [
+        t for t in re.findall(r"[a-z0-9]+", text.lower())
+        if t not in _STOP_WORDS
+    ]
 
 
 # ── Corpus manifest ──────────────────────────────────────────────────────────

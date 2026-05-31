@@ -23,7 +23,7 @@ LLM_SEED = 42                # OpenAI best-effort determinism (belt-and-suspende
 LLM_RETRY_ATTEMPTS = 2
 
 # ── Retrieval ────────────────────────────────────────────────────────────────
-BM25_TOP_K = 5               # chunks returned per query
+BM25_TOP_K = 7               # chunks returned per query (7 unique files, deduped by path)
 BM25_CHUNK_SIZE = 400        # characters per chunk
 BM25_CHUNK_OVERLAP = 80      # overlap between adjacent chunks
 BM25_MIN_CHUNK_LEN = 20      # skip chunks shorter than this
