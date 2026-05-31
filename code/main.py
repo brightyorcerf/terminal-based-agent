@@ -236,17 +236,11 @@ def run() -> None:
     total = len(df)
     print(f"  {total} tickets loaded.", flush=True)
 
-    # ── Detect actual output columns from output.csv header ──────────────
-    # If output.csv already has a header row, use it to set column order.
-    output_cols = OUTPUT_COLUMNS  # default from config
-    if OUTPUT_PATH.exists():
-        try:
-            header_df = pd.read_csv(OUTPUT_PATH, nrows=0)
-            detected = [c for c in header_df.columns if c in set(OUTPUT_COLUMNS)]
-            if detected:
-                output_cols = detected
-        except Exception:
-            pass
+    # ── Determine output column order ────────────────────────────────────
+    # Always use OUTPUT_COLUMNS order from config as the authoritative source.
+    # If output.csv exists but has extra/different columns, we still emit only
+    # OUTPUT_COLUMNS in their defined order — never infer order from the file.
+    output_cols = OUTPUT_COLUMNS
 
     # ── Process tickets in parallel ──────────────────────────────────────
     print(f"\n[3/4] Processing {total} tickets (workers={MAX_WORKERS}) …", flush=True)

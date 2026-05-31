@@ -86,6 +86,7 @@ DESTRUCTIVE_ACTIONS = frozenset({
     "delete_account",
     "modify_subscription",
     "reset_credentials",
+    "reset_password",       # in API spec — triggers account action, requires identity
     "close_ticket",
     "escalate_to_human",
     "chargeback",
