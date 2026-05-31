@@ -37,7 +37,12 @@ def _load_spec() -> tuple[frozenset[str], dict[str, dict]]:
     with open(API_SPEC_PATH, "r", encoding="utf-8") as fh:
         spec = json.load(fh)
 
-    tools = spec.get("tools", [])
+    # The spec is either a bare list of tool objects OR {"tools": [...]}
+    if isinstance(spec, list):
+        tools = spec
+    else:
+        tools = spec.get("tools", [])
+
     names = frozenset(t["name"] for t in tools if "name" in t)
     schemas = {
         t["name"]: t.get("parameters", {})
