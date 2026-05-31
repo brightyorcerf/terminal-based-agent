@@ -1,0 +1,18 @@
+# MLE Hiring Challenge — Python dependencies
+# Pin minor versions for reproducibility; patch versions allowed to float
+# for security fixes.
+
+# LLM client
+anthropic>=0.26.0,<1.0.0
+
+# BM25 retrieval — pure Python, deterministic
+rank-bm25>=0.2.2,<1.0.0
+
+# Data handling
+pandas>=2.0.0,<3.0.0
+
+# Language detection — uses DetectorFactory.seed for determinism
+langdetect>=1.0.9,<2.0.0
+
+# (Optional) faster CSV writing — pandas will use it automatically if present
+# pyarrow>=14.0.0
