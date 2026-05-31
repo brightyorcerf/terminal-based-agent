@@ -33,9 +33,9 @@ flowchart TD
 
         LLM["Stage 3 · LLM · gpt-4o\n━━━━━━━━━━━━━━━━━━━\ntemp=0 · seed=42\nticket in XML tags\nexplicit path allowlist\ncontinuous confidence scale"]
 
-        VALIDATE["Stage 4 · Post-Validation\n━━━━━━━━━━━━━━━━━━━━━\n① Citation manifest check\n② PII-in-response scan\n③ Enum enforcement\n④ Low-retrieval confidence cap\n⑤ actions_taken validation\n⑥ prerequisite injection"]
+        VALIDATE["Stage 4 · Post-Validation\n━━━━━━━━━━━━━━━━━━━━━\n① Citation manifest check\n② PII-in-response scan\n③ Enum enforcement\n④ Low-retrieval confidence cap\n⑤ actions_taken allowlist + verify_identity inject\n⑥ escalate_to_human guarantee"]
 
-        FALLBACK["🛡️ FALLBACK ROW\nescalated · risk=high\nno LLM · deterministic\nalways safe"]
+        FALLBACK["🛡️ FALLBACK ROW\nescalated · risk=high\nescalate_to_human injected\ndeterministic · always safe"]
 
         PARSE -->|"parsed"| PRESCREEN
         PARSE -->|"parse error"| FALLBACK
@@ -273,15 +273,18 @@ Nothing the LLM says is trusted without verification.
 | **PII override** | `pii_detected` is always set from our own regex scan — never from the LLM's self-report. The LLM can lie or miss things. We don't. |
 | **Enum enforcement** | status, request_type, risk_level are forced to valid allowlist values. An LLM returning `"status": "resolved"` gets corrected to `"escalated"`. |
 | **Low-retrieval confidence cap** | BM25 best score < 20 (approx. p10 of observed distribution, range 9–146) → confidence capped at 0.35. Very weak retrieval + replied status → downgraded to escalated. |
-| **Actions validation** | `actions_taken` array checked against `data/api_specs/internal_tools.json`. Unknown action names are dropped. |
-| **Prerequisite injection** | If any destructive action (refund, lock_account, delete_account, reset_credentials, etc.) appears without a preceding `verify_identity`, one is automatically injected before it. |
+| **Actions validation** | `actions_taken` array checked against `data/api_specs/internal_tools.json` (6 known tools). Unknown or hallucinated action names are silently dropped. |
+| **verify_identity injection** | If any destructive action (issue_refund, lock_account, delete_account, modify_subscription, reset_password, chargeback, reverse_transaction) appears without a preceding identity check, `{"action":"verify_identity","parameters":{"method":"email_otp","target":""}}` is injected before it. Handled by `actions.py`. |
+| **escalate_to_human injection** | Every ticket with `status="escalated"` must include `escalate_to_human` in `actions_taken`. If the LLM omitted it (or the ticket hit the hard-error fallback path), `validator.py` and `main.py` inject it automatically with inferred `priority` and `department` from `risk_level`. |
 | **Confidence clamp** | Hard floor/ceiling: `[0.05, 0.95]`. The model can never express absolute certainty or absolute zero confidence. |
 
 > **Fun fact:** The prerequisite injection for destructive actions is the
 > closest thing this system has to "agentic safety rails." The LLM might
 > confidently decide to issue a refund, but it physically cannot do so in the
 > output without `verify_identity` appearing first in the actions array — even
-> if it forgot to include it. This is enforced in code, not prompt.
+> if it forgot to include it. This is enforced in code, not prompt. The same
+> guarantee applies to `escalate_to_human`: every escalated ticket has it,
+> regardless of whether the LLM remembered to include it.
 
 ---
 
