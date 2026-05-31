@@ -52,7 +52,7 @@ from safety import (
     detect_language,
     is_gibberish,
 )
-from llm import call_llm
+from llm import call_llm, _load_cache
 from validator import validate_and_clean
 
 
@@ -230,12 +230,16 @@ def run() -> None:
     print("MLE Hiring Challenge — Support Triage Agent", flush=True)
     print("=" * 60, flush=True)
 
+    # ── Startup: load LLM cache ──────────────────────────────────────────
+    print("\n[1/5] Loading LLM response cache …", flush=True)
+    _load_cache()
+
     # ── Startup: build index ─────────────────────────────────────────────
-    print("\n[1/4] Initialising retriever …", flush=True)
+    print("\n[2/5] Initialising retriever …", flush=True)
     _retriever = Retriever()
 
     # ── Load tickets ─────────────────────────────────────────────────────
-    print("\n[2/4] Loading tickets …", flush=True)
+    print("\n[3/5] Loading tickets …", flush=True)
     if not TICKETS_PATH.exists():
         print(f"  [ERROR] Tickets file not found: {TICKETS_PATH}", flush=True)
         sys.exit(1)
@@ -252,7 +256,7 @@ def run() -> None:
     output_cols = OUTPUT_COLUMNS
 
     # ── Process tickets in parallel ──────────────────────────────────────
-    print(f"\n[3/4] Processing {total} tickets (workers={MAX_WORKERS}) …", flush=True)
+    print(f"\n[4/5] Processing {total} tickets (workers={MAX_WORKERS}) …", flush=True)
 
     results: list[dict | None] = [None] * total
 
@@ -274,7 +278,7 @@ def run() -> None:
                 print(f"  Progress: {completed}/{total}", flush=True)
 
     # ── Build output DataFrame ───────────────────────────────────────────
-    print("\n[4/4] Writing output …", flush=True)
+    print("\n[5/5] Writing output …", flush=True)
     output_df = pd.DataFrame(results)
 
     # Ensure all required columns are present with defaults

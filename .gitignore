@@ -24,3 +24,5 @@ Thumbs.db
 dist/
 build/
 *.egg-info/
+
+code/llm_cache.json

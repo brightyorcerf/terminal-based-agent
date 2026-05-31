@@ -10,6 +10,7 @@ Key design decisions:
   - Returns None on unrecoverable failure — caller handles fallback.
 """
 
+import hashlib
 import json
 import random
 import re
@@ -22,7 +23,9 @@ from config import (
     LLM_MODEL,
     LLM_MAX_TOKENS,
     LLM_TEMPERATURE,
+    LLM_SEED,
     LLM_RETRY_ATTEMPTS,
+    LLM_CACHE_PATH,
     CONF_HIGH,
     CONF_MEDIUM,
     CONF_LOW_RETRIEVAL,
@@ -30,6 +33,40 @@ from config import (
 
 # OpenAI client — reads OPENAI_API_KEY from environment automatically
 _client = openai.OpenAI()
+
+# ── Persistent response cache ─────────────────────────────────────────────────
+# Keyed by SHA-256(system_prompt + user_prompt). Guarantees byte-identical output
+# across runs regardless of OpenAI's seed/temperature non-determinism.
+# File is written after every new response so a mid-run crash loses nothing cached.
+_cache_lock = threading.Lock()
+_response_cache: dict[str, dict] = {}
+
+def _load_cache() -> None:
+    """Load cache from disk into memory. Called once at startup."""
+    global _response_cache
+    if LLM_CACHE_PATH.exists():
+        try:
+            with open(LLM_CACHE_PATH, "r", encoding="utf-8") as fh:
+                _response_cache = json.load(fh)
+            print(f"  [Cache] Loaded {len(_response_cache)} cached responses.", flush=True)
+        except Exception as exc:
+            print(f"  [Cache] Could not load cache ({exc}) — starting fresh.", flush=True)
+            _response_cache = {}
+
+def _save_cache_entry(key: str, value: dict) -> None:
+    """Append one entry to the in-memory cache and flush to disk."""
+    with _cache_lock:
+        _response_cache[key] = value
+        try:
+            with open(LLM_CACHE_PATH, "w", encoding="utf-8") as fh:
+                json.dump(_response_cache, fh, ensure_ascii=False)
+        except Exception as exc:
+            print(f"  [Cache] Write failed: {exc}", flush=True)
+
+def _cache_key(system: str, user: str) -> str:
+    """SHA-256 of the full prompt. Same input → same key, always."""
+    payload = f"{system}\x00{user}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 # ── Global rate-limit state ───────────────────────────────────────────────────
 # Shared across all threads. When any thread hits a rate limit it updates
@@ -263,25 +300,33 @@ def call_llm(
 
     Callers must handle None and produce a fallback escalation row.
     """
-    corpus_paths = list({chunk["path"] for chunk in retrieved_chunks})
+    corpus_paths = sorted({chunk["path"] for chunk in retrieved_chunks})
     system = _build_system_prompt(corpus_paths)
     user = _build_user_prompt(
         full_conversation, subject, company,
         retrieved_chunks, pii_types, language,
     )
 
+    # ── Cache lookup ─────────────────────────────────────────────────────────
+    key = _cache_key(system, user)
+    with _cache_lock:
+        cached = _response_cache.get(key)
+    if cached is not None:
+        return dict(cached)   # return a copy so caller mutations don't corrupt cache
+
+    # ── API call with shared rate-limit backoff ───────────────────────────────
     last_exc: Exception | None = None
-    rl_hits = 0                         # rate-limit hit counter (separate from attempt)
+    rl_hits = 0
 
     for attempt in range(LLM_RETRY_ATTEMPTS):
-        # All threads honour the shared cooldown before touching the API
         _wait_for_rate_limit()
 
         try:
             response = _client.chat.completions.create(
                 model=LLM_MODEL,
                 max_tokens=LLM_MAX_TOKENS,
-                temperature=LLM_TEMPERATURE,
+                temperature=LLM_TEMPERATURE,   # 0 — must stay 0
+                seed=LLM_SEED,                 # 42 — OpenAI best-effort determinism
                 response_format={"type": "json_object"},
                 messages=[
                     {"role": "system", "content": system},
@@ -289,11 +334,12 @@ def call_llm(
                 ],
             )
             raw: str = response.choices[0].message.content.strip()
-
-            # Strip markdown fences (defensive — json_object mode usually avoids them)
             raw = _JSON_FENCE_RE.sub("", raw).strip()
+            result = json.loads(raw)
 
-            return json.loads(raw)
+            # Cache the successful response before returning
+            _save_cache_entry(key, result)
+            return result
 
         except json.JSONDecodeError as exc:
             last_exc = exc
@@ -309,7 +355,6 @@ def call_llm(
                 f"Global backoff {wait:.1f}s — all workers will wait.",
                 flush=True,
             )
-            # Don't count this against attempt budget; just wait via next iteration
             _wait_for_rate_limit()
 
         except openai.APIError as exc:

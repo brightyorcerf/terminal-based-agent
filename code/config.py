@@ -13,12 +13,13 @@ DATA_ROOT = REPO_ROOT / "data"
 TICKETS_PATH = REPO_ROOT / "support_tickets" / "support_tickets.csv"
 OUTPUT_PATH = REPO_ROOT / "support_tickets" / "output.csv"
 API_SPEC_PATH = DATA_ROOT / "api_specs" / "internal_tools.json"
+LLM_CACHE_PATH = REPO_ROOT / "code" / "llm_cache.json"   # persistent response cache
 
 # ── LLM ─────────────────────────────────────────────────────────────────────
 LLM_MODEL = "gpt-4o"
 LLM_MAX_TOKENS = 1024
 LLM_TEMPERATURE = 0          # determinism — never change this
-LLM_RETRY_WAIT = 60          # seconds to wait on RateLimitError
+LLM_SEED = 42                # OpenAI best-effort determinism (belt-and-suspenders)
 LLM_RETRY_ATTEMPTS = 2
 
 # ── Retrieval ────────────────────────────────────────────────────────────────
