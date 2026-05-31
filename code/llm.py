@@ -26,6 +26,7 @@ from config import (
     LLM_SEED,
     LLM_RETRY_ATTEMPTS,
     LLM_CACHE_PATH,
+    REQUEST_MIN_INTERVAL,
     CONF_HIGH,
     CONF_MEDIUM,
     CONF_LOW_RETRIEVAL,
@@ -99,6 +100,33 @@ def _set_rate_limit_backoff(attempt: int) -> float:
         if resume > _rl_resume_at:
             _rl_resume_at = resume
     return wait
+
+
+# ── Proactive request throttle ────────────────────────────────────────────────
+# Serialises all API calls through a minimum inter-request interval.
+# This burns REQUEST_MIN_INTERVAL seconds upfront rather than burning through
+# the TPM window and triggering 60-120s reactive backoffs.
+# Both workers share _throttle_lock, so the effective rate is:
+#   max_RPM = 60 / REQUEST_MIN_INTERVAL  (regardless of worker count)
+_throttle_lock = threading.Lock()
+_last_api_call_at: float = 0.0
+
+
+def _wait_for_request_slot() -> None:
+    """
+    Block until REQUEST_MIN_INTERVAL seconds have elapsed since the last API call,
+    then claim the slot. Serialises across all threads — only one call starts at a time.
+    No-op if REQUEST_MIN_INTERVAL == 0.
+    """
+    global _last_api_call_at
+    if REQUEST_MIN_INTERVAL <= 0:
+        return
+    with _throttle_lock:
+        now = time.monotonic()
+        wait = _last_api_call_at + REQUEST_MIN_INTERVAL - now
+        if wait > 0:
+            time.sleep(wait)
+        _last_api_call_at = time.monotonic()
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -253,7 +281,7 @@ def _build_user_prompt(
         for i, chunk in enumerate(retrieved_chunks[:5], 1):
             corpus_section += (
                 f"\n[EXCERPT {i} — {chunk['path']}]\n"
-                f"{chunk['text'][:600]}\n"
+                f"{chunk['text'][:400]}\n"   # 400 = BM25_CHUNK_SIZE; no benefit showing more
             )
     else:
         corpus_section = "(No relevant corpus documents found.)"
@@ -331,12 +359,13 @@ def call_llm(
     if cached is not None:
         return dict(cached)   # return a copy so caller mutations don't corrupt cache
 
-    # ── API call with shared rate-limit backoff ───────────────────────────────
+    # ── API call with proactive throttle + shared rate-limit backoff ────────────
     last_exc: Exception | None = None
     rl_hits = 0
 
     for attempt in range(LLM_RETRY_ATTEMPTS):
-        _wait_for_rate_limit()
+        _wait_for_request_slot()   # proactive: enforces minimum inter-request gap
+        _wait_for_rate_limit()     # reactive: sleeps if a prior call was rate-limited
 
         try:
             response = _client.chat.completions.create(

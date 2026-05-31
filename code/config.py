@@ -17,20 +17,28 @@ LLM_CACHE_PATH = REPO_ROOT / "code" / "llm_cache.json"   # persistent response c
 
 # ── LLM ─────────────────────────────────────────────────────────────────────
 LLM_MODEL = "gpt-4o"
-LLM_MAX_TOKENS = 1024
+LLM_MAX_TOKENS = 700            # structured JSON output rarely exceeds 600 tokens
 LLM_TEMPERATURE = 0          # determinism — never change this
 LLM_SEED = 42                # OpenAI best-effort determinism (belt-and-suspenders)
 LLM_RETRY_ATTEMPTS = 2
 
 # ── Retrieval ────────────────────────────────────────────────────────────────
-BM25_TOP_K = 7               # chunks returned per query (7 unique files, deduped by path)
+BM25_TOP_K = 5               # chunks returned per query; 5 is the sweet spot — each extra chunk costs ~600 tokens
 BM25_CHUNK_SIZE = 400        # characters per chunk
 BM25_CHUNK_OVERLAP = 80      # overlap between adjacent chunks
 BM25_MIN_CHUNK_LEN = 20      # skip chunks shorter than this
 RETRIEVAL_THRESHOLD = 20.0   # BM25 scores range 9–146; below p10 (~24) → weak retrieval
 
 # ── Parallelism ──────────────────────────────────────────────────────────────
-MAX_WORKERS = 2             # ThreadPoolExecutor workers
+MAX_WORKERS = 2             # ThreadPoolExecutor workers (2 is optimal for Tier-2+ API keys)
+
+# ── Request pacing ───────────────────────────────────────────────────────────
+# Proactive minimum interval between LLM API calls, shared across all workers.
+# Prevents burning through the TPM window and triggering 60-120s reactive backoffs.
+# Rule of thumb: 30_000 TPM / ~2000 tokens_per_request = ~15 RPM max on Tier 1.
+# 1/15 RPM = 4.0s. Set 3.5s as a safe default for Tier 1.
+# On Tier 2+ (450k TPM) this is irrelevant — bump to 0.0 if you have headroom.
+REQUEST_MIN_INTERVAL = 3.5  # seconds between API calls (set 0.0 to disable)
 
 # ── Confidence ranges (for calibration) ─────────────────────────────────────
 # Used in the system prompt AND in post-validation overrides
