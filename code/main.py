@@ -21,9 +21,17 @@ a hardcoded escalation row on any unhandled exception.
 """
 
 import json
+import os
 import sys
 import traceback
 import concurrent.futures
+
+# Load .env before any module that reads env vars (anthropic client reads ANTHROPIC_API_KEY)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # dotenv optional; user can export ANTHROPIC_API_KEY directly
 
 import pandas as pd
 
@@ -233,6 +241,7 @@ def run() -> None:
         sys.exit(1)
 
     df = pd.read_csv(TICKETS_PATH)
+    df.columns = [c.lower() for c in df.columns]   # normalise Title/UPPER case headers
     total = len(df)
     print(f"  {total} tickets loaded.", flush=True)
 
