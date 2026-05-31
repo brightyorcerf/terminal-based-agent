@@ -16,7 +16,7 @@ API_SPEC_PATH = DATA_ROOT / "api_specs" / "internal_tools.json"
 LLM_CACHE_PATH = REPO_ROOT / "code" / "llm_cache.json"   # persistent response cache
 
 # ── LLM ─────────────────────────────────────────────────────────────────────
-LLM_MODEL = "gpt-4o"
+LLM_MODEL = "gpt-4o-2024-08-06"  # pinned — "gpt-4o" alias can shift between model snapshots
 LLM_MAX_TOKENS = 700            # structured JSON output rarely exceeds 600 tokens
 LLM_TEMPERATURE = 0          # determinism — never change this
 LLM_SEED = 42                # OpenAI best-effort determinism (belt-and-suspenders)
@@ -34,11 +34,15 @@ MAX_WORKERS = 2             # ThreadPoolExecutor workers (2 is optimal for Tier-
 
 # ── Request pacing ───────────────────────────────────────────────────────────
 # Proactive minimum interval between LLM API calls, shared across all workers.
-# Prevents burning through the TPM window and triggering 60-120s reactive backoffs.
-# Rule of thumb: 30_000 TPM / ~2000 tokens_per_request = ~15 RPM max on Tier 1.
-# 1/15 RPM = 4.0s. Set 3.5s as a safe default for Tier 1.
-# On Tier 2+ (450k TPM) this is irrelevant — bump to 0.0 if you have headroom.
-REQUEST_MIN_INTERVAL = 3.5  # seconds between API calls (set 0.0 to disable)
+# Default 0.0 — evaluation infrastructure runs on Tier 2+ (450k TPM) where no
+# proactive throttle is needed. The reactive exponential backoff handles any
+# unexpected rate limits automatically.
+#
+# If you are developing on a personal Tier-1 account (30k TPM, ~11 RPM max):
+#   set REQUEST_MIN_INTERVAL = 3.5  (60 / 3.5 ≈ 17 RPM — stays under Tier-1 ceiling)
+#
+# WARNING: values above 1.2 will cause 150 cold-cache tickets to exceed 3 minutes.
+REQUEST_MIN_INTERVAL = 0.0  # seconds between API calls (0.0 = disabled)
 
 # ── Confidence ranges (for calibration) ─────────────────────────────────────
 # Used in the system prompt AND in post-validation overrides

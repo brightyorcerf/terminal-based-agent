@@ -41,6 +41,20 @@ python code/main.py
 
 Output is written to `support_tickets/output.csv`.
 
+### Rate limits (personal/development accounts only)
+
+The default `REQUEST_MIN_INTERVAL = 0.0` in `code/config.py` is tuned for evaluation
+infrastructure (Tier 2+ API keys, 450k TPM). If you're running locally on a Tier 1
+account (30k TPM) and hitting rate-limit backoffs, increase it:
+
+```python
+# code/config.py
+REQUEST_MIN_INTERVAL = 3.5   # ≈ 17 RPM — safe for Tier 1 gpt-4o
+```
+
+> Note: any value above 1.2s will cause 150 cold-cache tickets to exceed the 3-minute
+> evaluation limit. Keep it at 0.0 for submission.
+
 ## Validating output format
 
 ```bash
@@ -75,7 +89,7 @@ code/
 ├── config.py         # All constants, thresholds, paths
 ├── retriever.py      # Corpus manifest + BM25 index
 ├── safety.py         # PII detection, injection detection, language ID
-├── llm.py            # System prompt, user prompt, Anthropic API wrapper
+├── llm.py            # System prompt, user prompt, OpenAI wrapper, SHA-256 cache
 ├── validator.py      # Post-generation manifest check + output cleaning
 ├── actions.py        # API spec loader + actions_taken validator
 ├── requirements.txt  # Pinned dependencies

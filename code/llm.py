@@ -74,8 +74,8 @@ def _cache_key(system: str, user: str) -> str:
 # _rl_resume_at so ALL threads pause — prevents N×60s overlapping waits.
 _rl_lock = threading.Lock()
 _rl_resume_at: float = 0.0          # epoch seconds; 0 means no backoff active
-_rl_base_wait: float = 10.0         # initial backoff seconds
-_rl_max_wait: float = 120.0         # cap
+_rl_base_wait: float = 5.0          # initial backoff seconds (5→10→20… capped at 60)
+_rl_max_wait: float = 60.0          # cap — sufficient; 120s was wasteful
 
 
 def _wait_for_rate_limit() -> None:
