@@ -1,33 +1,67 @@
 """
-llm.py — System prompt, user prompt builder, and Anthropic API wrapper.
+llm.py — System prompt, user prompt builder, and OpenAI API wrapper.
 
 Key design decisions:
   - ticket_text is ALWAYS wrapped in <ticket_data> XML tags so the LLM
     treats it as data, not as instructions (injection mitigation).
   - temperature=0 everywhere for determinism.
+  - response_format=json_object enforces JSON output, eliminating fence-stripping.
   - Retries once on transient errors; backs off 60 s on RateLimitError.
   - Returns None on unrecoverable failure — caller handles fallback.
 """
 
 import json
+import random
 import re
+import threading
 import time
 
-import anthropic
+import openai
 
 from config import (
     LLM_MODEL,
     LLM_MAX_TOKENS,
     LLM_TEMPERATURE,
-    LLM_RETRY_WAIT,
     LLM_RETRY_ATTEMPTS,
     CONF_HIGH,
     CONF_MEDIUM,
     CONF_LOW_RETRIEVAL,
 )
 
-# Anthropic client — reads ANTHROPIC_API_KEY from environment automatically
-_client = anthropic.Anthropic()
+# OpenAI client — reads OPENAI_API_KEY from environment automatically
+_client = openai.OpenAI()
+
+# ── Global rate-limit state ───────────────────────────────────────────────────
+# Shared across all threads. When any thread hits a rate limit it updates
+# _rl_resume_at so ALL threads pause — prevents N×60s overlapping waits.
+_rl_lock = threading.Lock()
+_rl_resume_at: float = 0.0          # epoch seconds; 0 means no backoff active
+_rl_base_wait: float = 10.0         # initial backoff seconds
+_rl_max_wait: float = 120.0         # cap
+
+
+def _wait_for_rate_limit() -> None:
+    """Sleep until the global rate-limit cooldown expires (if any)."""
+    with _rl_lock:
+        remaining = _rl_resume_at - time.monotonic()
+    if remaining > 0:
+        time.sleep(remaining)
+
+
+def _set_rate_limit_backoff(attempt: int) -> float:
+    """
+    Set shared backoff using exponential + ±25% jitter.
+    Returns the actual sleep duration (for logging).
+    """
+    global _rl_resume_at
+    wait = min(_rl_base_wait * (2 ** attempt), _rl_max_wait)
+    wait *= random.uniform(0.75, 1.25)          # jitter
+    resume = time.monotonic() + wait
+    with _rl_lock:
+        # Only extend the backoff, never shorten it
+        if resume > _rl_resume_at:
+            _rl_resume_at = resume
+    return wait
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -237,19 +271,26 @@ def call_llm(
     )
 
     last_exc: Exception | None = None
+    rl_hits = 0                         # rate-limit hit counter (separate from attempt)
 
     for attempt in range(LLM_RETRY_ATTEMPTS):
+        # All threads honour the shared cooldown before touching the API
+        _wait_for_rate_limit()
+
         try:
-            response = _client.messages.create(
+            response = _client.chat.completions.create(
                 model=LLM_MODEL,
                 max_tokens=LLM_MAX_TOKENS,
                 temperature=LLM_TEMPERATURE,
-                system=system,
-                messages=[{"role": "user", "content": user}],
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
             )
-            raw: str = response.content[0].text.strip()
+            raw: str = response.choices[0].message.content.strip()
 
-            # Strip markdown fences the model sometimes adds despite instructions
+            # Strip markdown fences (defensive — json_object mode usually avoids them)
             raw = _JSON_FENCE_RE.sub("", raw).strip()
 
             return json.loads(raw)
@@ -258,21 +299,23 @@ def call_llm(
             last_exc = exc
             if attempt < LLM_RETRY_ATTEMPTS - 1:
                 time.sleep(2)
-            # Try once more; second failure → return None below
 
-        except anthropic.RateLimitError as exc:
+        except openai.RateLimitError as exc:
             last_exc = exc
+            wait = _set_rate_limit_backoff(rl_hits)
+            rl_hits += 1
             print(
-                f"  [WARN] Rate limited. Waiting {LLM_RETRY_WAIT}s …",
+                f"  [WARN] Rate limited (hit #{rl_hits}). "
+                f"Global backoff {wait:.1f}s — all workers will wait.",
                 flush=True,
             )
-            time.sleep(LLM_RETRY_WAIT)
-            # Don't count this against retry attempts — wait and try again
+            # Don't count this against attempt budget; just wait via next iteration
+            _wait_for_rate_limit()
 
-        except anthropic.APIError as exc:
+        except openai.APIError as exc:
             last_exc = exc
             if attempt < LLM_RETRY_ATTEMPTS - 1:
                 time.sleep(5)
 
-    print(f"  [ERROR] LLM call failed: {last_exc}", flush=True)
+    print(f"  [ERROR] LLM call failed after {LLM_RETRY_ATTEMPTS} attempts: {last_exc}", flush=True)
     return None

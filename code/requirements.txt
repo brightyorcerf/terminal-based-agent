@@ -3,7 +3,7 @@
 # for security fixes.
 
 # LLM client
-anthropic>=0.26.0,<1.0.0
+openai>=1.30.0,<2.0.0
 
 # BM25 retrieval — pure Python, deterministic
 rank-bm25>=0.2.2,<1.0.0

@@ -15,7 +15,7 @@ OUTPUT_PATH = REPO_ROOT / "support_tickets" / "output.csv"
 API_SPEC_PATH = DATA_ROOT / "api_specs" / "internal_tools.json"
 
 # ── LLM ─────────────────────────────────────────────────────────────────────
-LLM_MODEL = "claude-sonnet-4-20250514"
+LLM_MODEL = "gpt-4o"
 LLM_MAX_TOKENS = 1024
 LLM_TEMPERATURE = 0          # determinism — never change this
 LLM_RETRY_WAIT = 60          # seconds to wait on RateLimitError
@@ -29,7 +29,7 @@ BM25_MIN_CHUNK_LEN = 20      # skip chunks shorter than this
 RETRIEVAL_THRESHOLD = 1.5    # below this → low confidence, lean toward escalate
 
 # ── Parallelism ──────────────────────────────────────────────────────────────
-MAX_WORKERS = 10             # ThreadPoolExecutor workers
+MAX_WORKERS = 2             # ThreadPoolExecutor workers
 
 # ── Confidence ranges (for calibration) ─────────────────────────────────────
 # Used in the system prompt AND in post-validation overrides
