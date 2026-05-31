@@ -3,13 +3,12 @@
 ## Prerequisites
 
 - Python 3.11+
-- An Anthropic API key
+- An OpenAI API key (`gpt-4o`)
 
 ## Installation
 
 ```bash
 # From repo root
-cd MLE-hiring
 
 # Create and activate a virtual environment (recommended)
 python -m venv .venv
@@ -27,10 +26,10 @@ pip install -r code/requirements.txt
 cp .env.example .env
 
 # Edit .env and add your key:
-#   ANTHROPIC_API_KEY=sk-ant-...
+#   OPENAI_API_KEY=sk-...
 ```
 
-The agent reads `ANTHROPIC_API_KEY` from the environment automatically.
+The agent reads `OPENAI_API_KEY` from the environment automatically.
 **Never hardcode keys.**
 
 ## Running the agent
@@ -53,14 +52,16 @@ evaluate quality.
 
 ## Reproducing results exactly
 
-The agent is deterministic:
+The agent is fully deterministic:
 
-- `temperature=0` on all LLM calls
+- `temperature=0`, `seed=42` on all OpenAI calls
+- SHA-256 keyed persistent LLM response cache (`code/llm_cache.json`) — same prompt always returns the same cached response
 - BM25 corpus is sorted before indexing (stable chunk IDs)
 - `langdetect.DetectorFactory.seed = 42`
 - No random sampling anywhere in the pipeline
+- `ThreadPoolExecutor` results collected by index (not completion order)
 
-Running the agent twice on the same input will produce byte-identical output.
+Running the agent twice on the same input produces byte-identical output.
 
 ## Architecture
 

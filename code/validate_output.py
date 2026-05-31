@@ -90,7 +90,8 @@ def main() -> int:
         return 1
 
     try:
-        df = pd.read_csv(OUTPUT_PATH)
+        # Read pii_detected as str — pandas 2.x auto-converts 'true'/'false' to bool
+        df = pd.read_csv(OUTPUT_PATH, dtype={"pii_detected": str})
     except Exception as exc:
         print(f"FATAL: Cannot read output.csv: {exc}")
         return 1
@@ -211,10 +212,10 @@ def main() -> int:
     corpus = _load_corpus_paths()
     hallucinated: list[tuple[int, str]] = []
     for i, val in enumerate(df["source_documents"]):
-        sources = str(val or "").strip()
-        if not sources:
+        # pd.isna() handles float NaN that pandas puts in for empty CSV cells
+        if pd.isna(val) or str(val).strip() == "":
             continue
-        for path in sources.split("|"):
+        for path in str(val).split("|"):
             path = path.strip()
             if path and path not in corpus:
                 hallucinated.append((i, path))

@@ -27,7 +27,7 @@ BM25_TOP_K = 5               # chunks returned per query
 BM25_CHUNK_SIZE = 400        # characters per chunk
 BM25_CHUNK_OVERLAP = 80      # overlap between adjacent chunks
 BM25_MIN_CHUNK_LEN = 20      # skip chunks shorter than this
-RETRIEVAL_THRESHOLD = 1.5    # below this → low confidence, lean toward escalate
+RETRIEVAL_THRESHOLD = 20.0   # BM25 scores range 9–146; below p10 (~24) → weak retrieval
 
 # ── Parallelism ──────────────────────────────────────────────────────────────
 MAX_WORKERS = 2             # ThreadPoolExecutor workers

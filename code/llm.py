@@ -162,15 +162,27 @@ Allowed file paths (ONLY cite from this list):
 • NEVER invent or guess file paths — only paths from the list above
 
 ════════════════════════════════════════════
-CONFIDENCE CALIBRATION — use these guidelines
+CONFIDENCE CALIBRATION — continuous scale, not discrete buckets
 ════════════════════════════════════════════
-{conf_high:.2f}   Strong corpus match, clear unambiguous answer
-{conf_medium:.2f}   Reasonable match, some uncertainty
-{conf_low:.2f}   Weak corpus match, answering with caveats
-0.25   Escalating (but explanation is still good)
-0.15   Adversarial detected
+Confidence is a continuous float in [0.0, 1.0]. Use the FULL range.
+Anchor examples only — interpolate freely between them:
 
-Do NOT use flat values like 0.8 for everything. Calibrate per ticket.
+  0.90+  Multiple corpus docs agree, direct and complete match, no ambiguity
+  {conf_high:.2f}   Strong single-doc match, answer is clear and unambiguous
+  0.72   Good match but one minor gap or caveat
+  0.65   Reasonable match, answer is likely correct but not fully grounded
+  {conf_medium:.2f}   Partial match or moderate uncertainty in one aspect
+  0.48   Borderline — escalation criteria weighed, thin corpus support
+  {conf_low:.2f}   Weak match, answering with significant caveats
+  0.25   Escalating despite some corpus support (policy/risk reasons)
+  0.15   Adversarial or injection attempt detected
+
+Rules:
+• NEVER output the same confidence for two tickets unless they are truly identical situations.
+• Adjust per-ticket: topic complexity, corpus coverage, ambiguity, PII, risk.
+• If escalating, score ≤ 0.45. If replying with high certainty, score ≥ 0.70.
+• Do NOT round to nearest 0.05 — use arbitrary precision (e.g. 0.67, 0.73, 0.41).
+• A ticket touching fraud, legal, or account-level action is inherently lower confidence even with good corpus support.
 
 ════════════════════════════════════════════
 RESPONSE RULES

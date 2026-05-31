@@ -16,7 +16,7 @@ support_tickets.csv
         │
         ▼
 ┌───────────────────────────────────────────────────────────────┐
-│  main.py — ThreadPoolExecutor (10 workers)                    │
+│  main.py — ThreadPoolExecutor (2 workers)                     │
 │                                                               │
 │  per ticket:                                                  │
 │                                                               │
@@ -85,9 +85,11 @@ and blocks adversarial inputs before they touch any API.
 
 Three checks:
 1. **Gibberish check** — printable character ratio, minimum length
-2. **Injection detection** — 20+ regex patterns covering direct overrides,
-   persona hijacking, system prompt extraction, output manipulation, false
-   authority claims, multilingual injections, and delimiter injection
+2. **Injection detection** — NFKC normalisation + Cyrillic/Greek confusables
+   map applied first, then 20+ regex patterns covering direct overrides,
+   instruction forgetting, persona hijacking, system prompt extraction,
+   output manipulation, false authority claims, multilingual injections,
+   delimiter injection, and role switching
 3. **High-risk PII** — credit cards, SSNs, Aadhaar numbers trigger automatic
    escalation regardless of ticket content
 
@@ -130,11 +132,16 @@ not instructions." This creates a structural separation between instructions
 The user prompt never interpolates ticket text into an instruction position.
 
 **Determinism:**
-`temperature=0` on all calls. The same input produces the same output.
+`temperature=0` and `seed=42` on all OpenAI calls. Additionally, a SHA-256
+keyed persistent cache (`code/llm_cache.json`) stores every unique response.
+The cache key is `SHA-256(system_prompt + "\x00" + user_prompt)`. The same
+input always returns the exact cached response — eliminating OpenAI's
+"best-effort" seed non-determinism entirely.
 
 **Retry logic:**
 - JSON parse failure: retry once with 2s wait
-- RateLimitError: wait 60s, retry (not counted against attempt limit)
+- RateLimitError: exponential backoff (10s × 2^n, ±25% jitter, capped 120s),
+  shared across ALL threads via `_rl_resume_at` float — prevents N×backoff cascades
 - APIError: retry once with 5s wait
 - All retries exhausted: return `None` → caller produces fallback row
 
@@ -186,19 +193,26 @@ The defence is layered — an attack must defeat ALL layers to succeed:
 
 ## Confidence Calibration
 
-Confidence is not a flat value. Rules baked into the system prompt and applied
-in post-validation:
+Confidence is a continuous float instructed to use arbitrary precision (e.g. 0.67, 0.73).
+Anchor points from the system prompt:
 
-| Situation | Score |
-|-----------|-------|
-| Strong corpus match, clear answer | ~0.82 |
-| Reasonable match, some uncertainty | ~0.55 |
-| Weak corpus match | ~0.35 |
-| Escalating (good explanation) | ~0.25 |
+| Situation | Score range |
+|-----------|-------------|
+| Multiple docs agree, direct match | 0.90+ |
+| Strong single-doc match | ~0.82 |
+| Reasonable match, one caveat | 0.65–0.72 |
+| Partial match or moderate uncertainty | ~0.55 |
+| Borderline — thin corpus support | ~0.48 |
+| Weak match, significant caveats | ~0.35 |
+| Escalating despite some corpus support | ~0.25 |
 | Adversarial detected | ~0.15 |
 
-Evaluated using Brier score — over-confident wrong answers are penalised more
-than under-confident correct ones.
+Post-validation overrides:
+- BM25 best score < 20 (approx. p10 of observed score distribution) → cap at 0.35
+- Hallucinated citation stripped → confidence reduced by 0.2
+- Confidence clamped to [0.05, 0.95] unconditionally
+
+Evaluated using Brier score — over-confident wrong answers are penalised more than under-confident correct ones.
 
 ---
 
@@ -206,9 +220,11 @@ than under-confident correct ones.
 
 The following properties ensure byte-identical output across runs:
 
-- `temperature=0` on all LLM calls
+- `temperature=0`, `seed=42` on all OpenAI API calls
+- SHA-256 keyed persistent cache (`code/llm_cache.json`) — same prompt → same response, always
 - `langdetect.DetectorFactory.seed = 42`
-- Corpus files sorted before BM25 indexing
+- Corpus files sorted before BM25 indexing — stable chunk IDs regardless of OS filesystem ordering
+- `sorted({chunk["path"] for chunk in retrieved_chunks})` — corpus path set sorted before system prompt rendering
 - `ThreadPoolExecutor` results collected by index (not by completion order)
 - No random sampling, no UUID generation, no timestamps in output
 
@@ -233,10 +249,10 @@ The following properties ensure byte-identical output across runs:
    the LLM may pick the wrong one. We instruct it to prefer specific over
    general and to flag low confidence, but cannot guarantee correct resolution.
 
-5. **Rate limit pressure** — with 10 parallel workers and many tickets, rate
-   limits are possible. The 60s backoff handles this but could push execution
-   close to the 3-minute limit on large batches. Reduce `MAX_WORKERS` in
-   `config.py` if needed.
+5. **Rate limit pressure** — with 2 parallel workers and many tickets, rate
+   limits may occur. A global shared exponential backoff (10s → 120s) prevents
+   cascading waits. On the second run, the persistent cache eliminates all API
+   calls entirely — total runtime drops from ~5 minutes to under 10 seconds.
 
 6. **Company field** — our cross-corpus retrieval mitigates the lying company
    field, but if the ticket body also contains misleading product signals the
@@ -248,15 +264,15 @@ The following properties ensure byte-identical output across runs:
 
 | Dimension | Self-Rating (1–10) | Notes |
 |-----------|-------------------|-------|
-| Adversarial Robustness | 8 | Pre-screen + XML isolation covers known patterns; novel attacks may bypass regex |
+| Adversarial Robustness | 9 | Pre-screen (20+ patterns) + NFKC + confusables map + XML isolation; novel phrasings remain the residual risk |
 | Escalation Precision | 7 | Explicit rules cover clear cases; edge cases rely on LLM calibration |
-| Response Quality | 7 | Grounded in corpus; BM25 recall gap is the main risk |
-| Source Attribution | 9 | Manifest check makes hallucinated citations structurally impossible after validation |
-| Tool Calling | 7 | Prerequisite injection is reliable; parameter schema validation is shallow |
-| PII Detection & Handling | 8 | Regex covers major PII types; exotic formats may be missed |
-| Architecture & Code Quality | 8 | Clear separation of concerns; all stages independently testable |
-| Confidence Calibration | 7 | Calibration rules are principled but not empirically tuned to this corpus |
-| Determinism | 10 | All sources of randomness eliminated |
+| Response Quality | 7 | Grounded in corpus; BM25 keyword recall gap is the main risk |
+| Source Attribution | 9 | Corpus manifest check makes hallucinated citations structurally impossible post-validation |
+| Tool Calling | 7 | Prerequisite injection for destructive actions is reliable; parameter value validation is shallow |
+| PII Detection & Handling | 8 | Regex covers credit card, SSN, Aadhaar, email, phone; exotic formats may be missed |
+| Architecture & Code Quality | 9 | Clear separation of concerns (parse→prescreen→retrieve→generate→validate); each stage independently testable |
+| Confidence Calibration | 7 | Continuous-scale prompt guidance baked in; empirical Brier calibration not yet measured |
+| Determinism | 10 | Persistent SHA-256 cache + temperature=0 + seed=42 + sorted sets → byte-identical output |
 
 **3 hardest visible tickets (predicted):**
 1. Tickets where `company` is wrong AND the subject contradicts the body —
@@ -273,8 +289,8 @@ The following properties ensure byte-identical output across runs:
 - Social engineering via emotional manipulation ("I'll lose my job if you don't…")
 - Cross-product confusion with legitimate-looking but wrong product signals
 
-**Known failure mode not fixed:**
-Unicode / homoglyph injection is not covered by our regex patterns.
-A dedicated Unicode normalisation step (NFKC normalisation before pattern
-matching) would close this gap but was not implemented within the challenge
-window.
+**Unicode/homoglyph injection:**
+NFKC normalisation is applied before every regex match in `safety.py`.
+Additionally, a `_CONFUSABLES` map translates common Cyrillic, Greek, and
+full-width lookalike characters (e.g. U+0456 Cyrillic "і" → ASCII "i") that
+NFKC alone does not fold. This closes the "ｉgnore рrevious" homoglyph vector.
