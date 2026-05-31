@@ -1,3 +1,5 @@
+a233111 update architecture
+f8688d7 add refinements, git and agent logs
 af9febf fix: pin model version
 9a8bbd6 fix :reduce per-request token footprint by 35% and enforce 3.5s interval
 345d925 fix: reduce per-request token footprint by 35% and enforce 3.5s interval
