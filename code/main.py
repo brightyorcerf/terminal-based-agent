@@ -76,9 +76,18 @@ def _make_escalation_row(
     """
     Produce a deterministic escalation row without calling the LLM.
     Used by the pre-screen gate and hard-error fallbacks.
+    Always includes escalate_to_human in actions_taken.
     """
     if confidence is None:
         confidence = CONF_PII_ESCALATE if pii_detected else CONF_ADVERSARIAL
+
+    if risk_level == "critical":
+        dept, priority = "security", "urgent"
+    elif risk_level == "high":
+        dept, priority = "billing", "high"
+    else:
+        dept, priority = "general", "normal"
+
     row = dict(FALLBACK_ROW)
     row.update(
         {
@@ -87,6 +96,14 @@ def _make_escalation_row(
             "language": language,
             "risk_level": risk_level,
             "confidence_score": round(confidence, 3),
+            "actions_taken": json.dumps(
+                [{"action": "escalate_to_human", "parameters": {
+                    "priority": priority,
+                    "department": dept,
+                    "summary": reason[:120],
+                }}],
+                separators=(",", ":"),
+            ),
         }
     )
     return row

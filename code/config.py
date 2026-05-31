@@ -99,11 +99,11 @@ DESTRUCTIVE_ACTIONS = frozenset({
     "delete_account",
     "modify_subscription",
     "reset_credentials",
-    "reset_password",       # in API spec — triggers account action, requires identity
-    "close_ticket",
-    "escalate_to_human",
+    "reset_password",       # account action, requires identity
     "chargeback",
     "reverse_transaction",
+    # escalate_to_human and close_ticket intentionally excluded:
+    # routing to a human does not require identity verification.
 })
 
 IDENTITY_ACTIONS = frozenset({

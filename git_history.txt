@@ -1,0 +1,18 @@
+af9febf fix: pin model version
+9a8bbd6 fix :reduce per-request token footprint by 35% and enforce 3.5s interval
+345d925 fix: reduce per-request token footprint by 35% and enforce 3.5s interval
+2bff1d6 docs: add specific ticket analysis and failure mode to self-assessment
+ab825de update architecture.md and add mermaid
+c41a1a9 feat: implement stop-word filtering, expand top-k, and harden escalation rules
+3792aaf chore: calibrate confidence metrics and sync architecture documentation
+a896d87 perf: implement local caching layer and finalize deterministic output
+0f5ae3d refactor(llm): migrate from Anthropic to OpenAI and tune worker concurrency
+aaf2364 fix(integration): resolve column case sensitivity, tool schema loading, and env initialization
+dea3ade fix(core): update action spec parser for list-format JSON and verify schema alignment
+cc80789 docs: move readme and architecture.md into code folder
+32f199c fix: patch injection security flaws, correct csv schema, and add validation script
+336538f add core files
+db4ccc0 Remove results announced date
+e162ec0 Update deadline to 1 week and replace AI judge with 1-on-1 interview
+99a0e0e Update submission instructions with Google Forms link
+ec78098 Initial commit: MLE Hiring Challenge Template (10/10 Difficulty)

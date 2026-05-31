@@ -15,6 +15,8 @@ Checks:
   9. confidence clamp to [0.05, 0.95]
 """
 
+import json
+
 from config import (
     VALID_STATUSES,
     VALID_REQUEST_TYPES,
@@ -121,6 +123,37 @@ def validate_and_clean(
     llm_output["actions_taken"] = validate_actions(
         llm_output.get("actions_taken", [])
     )
+
+    # ── 6b. Auto-inject escalate_to_human for escalated tickets ─────────
+    # If the LLM forgot to add escalate_to_human (or the row fell back to
+    # FALLBACK_ROW with empty actions), inject it now. This is a structural
+    # guarantee: every escalated ticket MUST have this action.
+    if llm_output.get("status") == "escalated":
+        try:
+            acts = json.loads(llm_output["actions_taken"])
+        except Exception:
+            acts = []
+        has_esc = any(a.get("action") == "escalate_to_human" for a in acts if isinstance(a, dict))
+        if not has_esc:
+            # Infer department from risk_level / request_type
+            risk = llm_output.get("risk_level", "medium")
+            rtype = llm_output.get("request_type", "product_issue")
+            if risk in ("critical",) or rtype == "invalid":
+                dept, priority = "security", "urgent"
+            elif risk == "high":
+                dept, priority = "billing", "high"
+            else:
+                dept, priority = "general", "normal"
+            esc_action = {
+                "action": "escalate_to_human",
+                "parameters": {
+                    "priority": priority,
+                    "department": dept,
+                    "summary": llm_output.get("justification", "Escalated for human review.")[:120],
+                },
+            }
+            acts.insert(0, esc_action)
+            llm_output["actions_taken"] = json.dumps(acts, separators=(",", ":"))
 
     # ── 8. language fallback ─────────────────────────────────────────────
     if not llm_output.get("language"):

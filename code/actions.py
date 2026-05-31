@@ -118,7 +118,10 @@ def validate_actions(
         for i, action in enumerate(valid):
             if action["action"] in DESTRUCTIVE_ACTIONS:
                 # Inject verify_identity immediately before first destructive
-                valid.insert(i, {"action": "verify_identity", "parameters": {}})
+                valid.insert(i, {"action": "verify_identity", "parameters": {
+                    "method": "email_otp",
+                    "target": "",   # populated by human agent — LLM should have included this
+                }})
                 break
 
     return json.dumps(valid, separators=(",", ":"))
